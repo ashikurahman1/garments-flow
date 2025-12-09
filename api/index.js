@@ -176,15 +176,14 @@ async function run() {
 }
 run().catch(console.dir);
 
-app.use((req, res) => {
-  res.status(404).json({ message: 'Route not found' });
-});
 app.get('/', (req, res) => {
   res.send({
     message:
       "Welcome to Garments Flow API! Don't get lost in the code jungle 🐒",
   });
 });
-
+// app.use((req, res) => {
+//   res.status(404).json({ message: 'Route not found' });
+// });
 // Start server
 app.listen(port, () => console.log(`Server running on port ${port}`));
