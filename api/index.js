@@ -56,7 +56,28 @@ async function run() {
     const db = client.db('garments_flow');
     const usersCollection = db.collection('users');
 
+    // Verify Admin
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      if (!user || user.role !== 'admin') {
+        return res.staus(403).send({ message: 'Forbidden Access' });
+      }
+      next();
+    };
+
     // users related API
+    app.get(
+      '/api/users',
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const cursor = usersCollection.find().sort({ createdAt: -1 });
+        const result = await cursor.toArray();
+        res.send(result);
+      }
+    );
     app.post('/api/users', async (req, res) => {
       const user = req.body;
       user.status = 'pending';
