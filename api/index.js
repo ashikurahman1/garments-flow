@@ -73,7 +73,16 @@ async function run() {
       verifyFirebaseToken,
       verifyAdmin,
       async (req, res) => {
-        const cursor = usersCollection.find().sort({ createdAt: -1 });
+        const searchText = req.query.searchText;
+        const query = {};
+        if (searchText) {
+          query.$or = [
+            { displayName: { $regex: searchText, $options: 'i' } },
+            { email: { $regex: searchText, $options: 'i' } },
+          ];
+        }
+
+        const cursor = usersCollection.find(query).sort({ createdAt: -1 });
         const result = await cursor.toArray();
         res.send(result);
       }
@@ -97,6 +106,66 @@ async function run() {
       const user = await usersCollection.findOne(query);
       res.send({ role: user?.role || 'buyer' });
     });
+    app.patch(
+      '/api/users/:id',
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { id } = req.params;
+
+        const { role, status } = req.body;
+
+        const result = await usersCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: { role, status },
+          }
+        );
+        res.send({ success: !!result.modifiedCount });
+      }
+    );
+    app.patch(
+      '/api/users/:id/suspend',
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { id } = req.params;
+        const { suspendReason, suspendFeedback } = req.body;
+
+        const result = await usersCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: 'suspended', suspendReason, suspendFeedback } }
+        );
+
+        res.send({ success: !!result.modifiedCount });
+      }
+    );
+
+    app.delete(
+      '/api/users/:id',
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { id } = req.params;
+
+        try {
+          const result = await usersCollection.deleteOne({
+            _id: new ObjectId(id),
+          });
+          if (result.deletedCount === 1) {
+            res.send({ success: true, message: 'User deleted successfully' });
+          } else {
+            res.status(404).send({ success: false, message: 'User not found' });
+          }
+        } catch (error) {
+          console.error(error);
+          res
+            .status(500)
+            .send({ success: false, message: 'Internal server error' });
+        }
+      }
+    );
+
     // Send a ping to confirm a successful connection
     await client.db('admin').command({ ping: 1 });
     console.log(
