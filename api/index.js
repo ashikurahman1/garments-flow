@@ -21,7 +21,7 @@ const storage = multer.diskStorage({
   },
 });
 export const upload = multer({ storage });
-
+export const uploadMemory = multer({ storage: multer.memoryStorage() });
 const app = express();
 
 // uploads
@@ -97,6 +97,7 @@ async function run() {
     };
 
     // users related API
+    // get all users by admin
     app.get(
       '/api/users',
       verifyFirebaseToken,
@@ -116,6 +117,7 @@ async function run() {
         res.send(result);
       }
     );
+    // add user in Db
     app.post('/api/users', async (req, res) => {
       const user = req.body;
       user.status = 'pending';
@@ -129,12 +131,99 @@ async function run() {
       const result = await usersCollection.insertOne(user);
       res.status(200).send(result);
     });
+
+    // get user by query email
+    app.get('/api/users/:email', verifyFirebaseToken, async (req, res) => {
+      try {
+        const email = req.params.email;
+
+        if (email !== req.decoded_email) {
+          return res
+            .status(403)
+            .send({ success: false, message: 'Forbidden access' });
+        }
+
+        const user = await usersCollection.findOne({ email });
+
+        if (!user) {
+          return res
+            .status(404)
+            .send({ success: false, message: 'User not found' });
+        }
+
+        res.send({ success: true, user });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ success: false, message: 'Server error' });
+      }
+    });
+
+    // get user role by query email
     app.get('/api/users/:email/role', verifyFirebaseToken, async (req, res) => {
       const email = req.params.email;
       const query = { email };
       const user = await usersCollection.findOne(query);
       res.send({ role: user?.role || 'buyer' });
     });
+    // update user profile
+    app.patch(
+      '/api/users/:email/update-profile',
+      verifyFirebaseToken,
+      uploadMemory.single('photo'),
+      async (req, res) => {
+        try {
+          const { email } = req.params;
+          const { displayName } = req.body;
+
+          let photoURL;
+
+          if (req.file) {
+            const imgbbApiKey = process.env.VITE_IMGBB_API;
+            const formData = new URLSearchParams();
+            formData.append('key', imgbbApiKey);
+            formData.append('image', req.file.buffer.toString('base64'));
+
+            const imgbbRes = await fetch('https://api.imgbb.com/1/upload', {
+              method: 'POST',
+              body: formData,
+            });
+
+            const imgbbData = await imgbbRes.json();
+            if (imgbbData.success) {
+              photoURL = imgbbData.data.url;
+            } else {
+              throw new Error('Image upload failed');
+            }
+          }
+
+          const updateData = { displayName };
+          if (photoURL) updateData.photoURL = photoURL;
+
+          const result = await usersCollection.updateOne(
+            { email },
+            { $set: updateData }
+          );
+
+          const updatedUser = await usersCollection.findOne({ email });
+
+          res.send({
+            success: true,
+            message: 'Profile updated successfully!',
+            photoURL: updatedUser.photoURL,
+            user: updatedUser,
+          });
+        } catch (error) {
+          console.error(error);
+          res.status(500).send({
+            success: false,
+            message: 'Server error!',
+            error: error.message,
+          });
+        }
+      }
+    );
+
+    // update user role & status by admin
     app.patch(
       '/api/users/:id',
       verifyFirebaseToken,
@@ -153,6 +242,7 @@ async function run() {
         res.send({ success: !!result.modifiedCount });
       }
     );
+    // suspend user by admin
     app.patch(
       '/api/users/:id/suspend',
       verifyFirebaseToken,
@@ -170,6 +260,7 @@ async function run() {
       }
     );
 
+    // delete user by admin
     app.delete(
       '/api/users/:id',
       verifyFirebaseToken,
