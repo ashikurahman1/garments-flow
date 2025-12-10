@@ -20,7 +20,8 @@
     "firebase-admin": "^13.6.0",
     "jsonwebtoken": "^9.0.3",
     "mongodb": "^7.0.0",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "serverless-http": "^4.0.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6"

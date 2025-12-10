@@ -315,7 +315,7 @@ async function run() {
       '/api/products',
       verifyFirebaseToken,
       verifyManager,
-      memoryStorage.array('images', 10),
+      uploadMemory.array('images', 10),
       async (req, res) => {
         try {
           const imageUrls = req.files.map(f => `/uploads/${f.filename}`);
