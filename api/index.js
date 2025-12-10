@@ -2,26 +2,43 @@ import dotenv from 'dotenv';
 dotenv.config();
 import express from 'express';
 import cors from 'cors';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import admin from 'firebase-admin';
+import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
+
+// Create uploads folder if missing
+if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
+
+// Multer storage config
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, 'uploads/'),
+  filename: (req, file, cb) => {
+    const unique =
+      Date.now() + '-' + Math.random() + path.extname(file.originalname);
+    cb(null, unique);
+  },
+});
+export const upload = multer({ storage });
 
 const app = express();
 
-import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
+// uploads
+app.use('/uploads', express.static('uploads'));
+
 const port = process.env.PORT || 5000;
 
-// Generate the tracking ID
+// Middlewares
+app.use(cors());
+app.use(express.json());
 
-// Firebase Service Key
-import admin from 'firebase-admin';
-
+// Firebase admin sdk
 const decoded = Buffer.from(process.env.SERVICE_KEY, 'base64').toString('utf8');
 const serviceAccount = JSON.parse(decoded);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
-
-// Middlewares
-app.use(cors());
-app.use(express.json());
 
 // verify Firebase Token
 const verifyFirebaseToken = async (req, res, next) => {
@@ -55,6 +72,7 @@ async function run() {
   try {
     const db = client.db('garments_flow');
     const usersCollection = db.collection('users');
+    const productsCollection = db.collection('products');
 
     // Verify Admin
     const verifyAdmin = async (req, res, next) => {
@@ -63,6 +81,17 @@ async function run() {
       const user = await usersCollection.findOne(query);
       if (!user || user.role !== 'admin') {
         return res.staus(403).send({ message: 'Forbidden Access' });
+      }
+      next();
+    };
+
+    //  Verify Manager
+    const verifyManager = async (req, res, next) => {
+      const email = req.decoded_email;
+      const user = await usersCollection.findOne({ email });
+
+      if (!user || user.role !== 'manager') {
+        return res.status(403).send({ message: 'Forbidden Access' });
       }
       next();
     };
@@ -166,6 +195,38 @@ async function run() {
       }
     );
 
+    // Products related api
+    app.post(
+      '/api/products',
+      verifyFirebaseToken,
+      verifyManager,
+      upload.array('images', 10),
+      async (req, res) => {
+        try {
+          const imageUrls = req.files.map(f => `/uploads/${f.filename}`);
+
+          const product = {
+            name: req.body.name,
+            description: req.body.description,
+            category: req.body.category,
+            price: Number(req.body.price),
+            availableQuantity: Number(req.body.availableQuantity),
+            moq: Number(req.body.moq),
+            demoVideo: req.body.demoVideo || null,
+            paymentOption: req.body.paymentOption,
+            showOnHome: req.body.showOnHome === 'true',
+            images: imageUrls,
+            createdAt: new Date(),
+          };
+          const result = await productsCollection.insertOne(product);
+
+          res.send({ success: true, id: result.insertedId });
+        } catch (error) {
+          console.log(error);
+          res.status(500).send({ success: false });
+        }
+      }
+    );
     // Send a ping to confirm a successful connection
     await client.db('admin').command({ ping: 1 });
     console.log(
