@@ -2,14 +2,15 @@ import dotenv from 'dotenv';
 dotenv.config();
 import express from 'express';
 import cors from 'cors';
-import multer from 'multer';
+import multer, { memoryStorage } from 'multer';
 import path from 'path';
 import fs from 'fs';
 import admin from 'firebase-admin';
 import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
+import serverless from 'serverless-http';
 
 // Create uploads folder if missing
-if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
+// if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
 // Multer storage config
 const storage = multer.diskStorage({
@@ -80,7 +81,7 @@ async function run() {
       const query = { email };
       const user = await usersCollection.findOne(query);
       if (!user || user.role !== 'admin') {
-        return res.staus(403).send({ message: 'Forbidden Access' });
+        return res.status(403).send({ message: 'Forbidden Access' });
       }
       next();
     };
@@ -314,7 +315,7 @@ async function run() {
       '/api/products',
       verifyFirebaseToken,
       verifyManager,
-      upload.array('images', 10),
+      memoryStorage.array('images', 10),
       async (req, res) => {
         try {
           const imageUrls = req.files.map(f => `/uploads/${f.filename}`);
@@ -412,7 +413,7 @@ async function run() {
           }
 
           if (req.decoded_email !== email) {
-            return res.status(403).json({ msessage: 'Unauthorized access' });
+            return res.status(403).json({ message: 'Unauthorized access' });
           }
 
           const products = await productsCollection
@@ -434,7 +435,7 @@ async function run() {
     );
 
     // Send a ping to confirm a successful connection
-    await client.db('admin').command({ ping: 1 });
+    // await client.db('admin').command({ ping: 1 });
     console.log(
       'Pinged your deployment. You successfully connected to MongoDB!'
     );
@@ -453,4 +454,5 @@ app.get('/', (req, res) => {
 //   res.status(404).json({ message: 'Route not found' });
 // });
 // Start server
-app.listen(port, () => console.log(`Server running on port ${port}`));
+// app.listen(port, () => console.log(`Server running on port ${port}`));
+export const handler = serverless(app);
