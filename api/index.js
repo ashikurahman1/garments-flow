@@ -196,6 +196,29 @@ async function run() {
     );
 
     // Products related api
+    app.get('/api/products', async (req, res) => {
+      try {
+        const cursor = productsCollection.find({}).sort({ createdAt: -1 });
+        const result = await cursor.toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: 'Something wen wrong' });
+      }
+    });
+    app.get('/api/products/:id', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const query = {
+          _id: new ObjectId(id),
+        };
+        const result = await productsCollection.findOne(query);
+        res.send(result);
+        console.log(id);
+      } catch (error) {
+        res.status(500).send({ message: 'Something wen wrong' });
+      }
+    });
+
     app.post(
       '/api/products',
       verifyFirebaseToken,
@@ -212,9 +235,11 @@ async function run() {
             price: Number(req.body.price),
             availableQuantity: Number(req.body.availableQuantity),
             moq: Number(req.body.moq),
-            demoVideo: req.body.demoVideo || null,
+            demoVideo: req.body.demoVideo || ' ',
+            managerEmail: req.body.managerEmail,
             paymentOption: req.body.paymentOption,
-            showOnHome: req.body.showOnHome === 'true',
+            showOnHome:
+              req.body.showOnHome === 'true' || req.body.showOnHome === true,
             images: imageUrls,
             createdAt: new Date(),
           };
@@ -227,6 +252,96 @@ async function run() {
         }
       }
     );
+    app.patch(
+      '/api/products/:id',
+      verifyFirebaseToken,
+      verifyManager,
+      upload.array('images', 10),
+      async (req, res) => {
+        try {
+          const { id } = req.params;
+
+          const updateData = {
+            name: req.body.name,
+            description: req.body.description,
+            category: req.body.category,
+            price: Number(req.body.price),
+            availableQuantity: Number(req.body.availableQuantity),
+            moq: Number(req.body.moq),
+            paymentOption: req.body.paymentOption,
+            showOnHome:
+              req.body.showOnHome === 'true' || req.body.showOnHome === true,
+            demoVideo: req.body.demoVideo || '',
+          };
+          if (req.files && req.files.length > 0) {
+            updateData.images = req.files.map(f => `/uploads/${f.filename}`);
+          }
+          const result = await productsCollection.updateOne(
+            {
+              _id: new ObjectId(id),
+            },
+            { $set: updateData }
+          );
+          res.send({ success: true });
+        } catch (error) {
+          console.log(error);
+          res.status(500).send({ success: false });
+        }
+      }
+    );
+    app.delete(
+      '/api/products/:id',
+      verifyFirebaseToken,
+      verifyManager,
+      async (req, res) => {
+        try {
+          const { id } = req.params;
+
+          const result = await productsCollection.deleteOne({
+            _id: new ObjectId(id),
+          });
+          res.send({ success: !!result.deletedCount });
+        } catch (error) {
+          res.status(500).send({ success: false });
+        }
+      }
+    );
+
+    // only manager products
+    app.get(
+      '/api/manager/products',
+      verifyFirebaseToken,
+      verifyManager,
+      async (req, res) => {
+        try {
+          const email = req.query.email;
+
+          if (!email) {
+            return res.status(400).json({ message: 'Email is required' });
+          }
+
+          if (req.decoded_email !== email) {
+            return res.status(403).json({ msessage: 'Unauthorized access' });
+          }
+
+          const products = await productsCollection
+            .find({ managerEmail: email })
+            .sort({ createdAt: -1 })
+            .toArray();
+
+          const finalProducts = products.map(p => ({
+            ...p,
+            images: p.images?.map(
+              img => `${req.protocol}://${req.get('host')}${img}`
+            ),
+          }));
+          res.send(finalProducts);
+        } catch (error) {
+          res.status(500).send({ message: 'Internal server error' });
+        }
+      }
+    );
+
     // Send a ping to confirm a successful connection
     await client.db('admin').command({ ping: 1 });
     console.log(
