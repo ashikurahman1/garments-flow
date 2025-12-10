@@ -9,19 +9,22 @@ import admin from 'firebase-admin';
 import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
 import serverless from 'serverless-http';
 
+// ---- didnt support on vercel
 // Create uploads folder if missing
 // if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
 // Multer storage config
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/'),
-  filename: (req, file, cb) => {
-    const unique =
-      Date.now() + '-' + Math.random() + path.extname(file.originalname);
-    cb(null, unique);
-  },
-});
-export const upload = multer({ storage });
+// const storage = multer.diskStorage({
+//   destination: (req, file, cb) => cb(null, 'uploads/'),
+//   filename: (req, file, cb) => {
+//     const unique =
+//       Date.now() + '-' + Math.random() + path.extname(file.originalname);
+//     cb(null, unique);
+//   },
+// });
+// export const upload = multer({ storage });
+// ---- didnt support on vercel
+
 export const uploadMemory = multer({ storage: multer.memoryStorage() });
 const app = express();
 
@@ -436,9 +439,9 @@ async function run() {
 
     // Send a ping to confirm a successful connection
     // await client.db('admin').command({ ping: 1 });
-    console.log(
-      'Pinged your deployment. You successfully connected to MongoDB!'
-    );
+    // console.log(
+    //   'Pinged your deployment. You successfully connected to MongoDB!'
+    // );
   } finally {
   }
 }
