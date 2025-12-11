@@ -5,6 +5,7 @@ import cors from 'cors';
 import formidable from 'formidable';
 import axios from 'axios';
 import fs from 'fs';
+import { nanoid } from 'nanoid';
 import admin from 'firebase-admin';
 import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
 
@@ -557,6 +558,7 @@ async function run() {
           lastName,
           contact,
           deliveryAddress: address,
+          trackingId: nanoid(10).toUpperCase(),
           additionalNotes: notes || '',
           paymentOption: product.paymentOption,
           statusHistory: [{ status: 'pending', date: new Date() }],
@@ -573,7 +575,11 @@ async function run() {
           { $inc: { availableQuantity: -quantity } }
         );
 
-        res.status(201).send({ success: true, orderId: result.insertedId });
+        res.status(201).send({
+          success: true,
+          orderId: result.insertedId,
+          trackingId: newOrder.trackingId,
+        });
       } catch (error) {
         console.error('Order API Error:', error);
         res.status(500).send({ success: false, message: 'Server error' });
@@ -626,6 +632,24 @@ async function run() {
       }
     });
 
+    // Get order by ID for tracking
+    app.get('/api/orders/track-by-id/:trackingId', async (req, res) => {
+      try {
+        const { trackingId } = req.params;
+
+        const order = await ordersCollection.findOne({ trackingId });
+
+        if (!order)
+          return res
+            .status(404)
+            .send({ success: false, message: 'Order not found' });
+
+        res.send({ success: true, order });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ success: false, message: 'Server error' });
+      }
+    });
     // All Stats
     app.get(
       '/dashboard/admin/stats',
