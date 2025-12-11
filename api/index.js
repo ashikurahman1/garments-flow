@@ -2,34 +2,13 @@ import dotenv from 'dotenv';
 dotenv.config();
 import express from 'express';
 import cors from 'cors';
-import multer from 'multer';
-// import path from 'path';
-// import fs from 'fs';
+import formidable from 'formidable';
+import axios from 'axios';
+import fs from 'fs';
 import admin from 'firebase-admin';
 import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
-// import serverless from 'serverless-http';
 
-// ---- didnt support on vercel
-// Create uploads folder if missing
-// if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
-
-// Multer storage config
-// const storage = multer.diskStorage({
-//   destination: (req, file, cb) => cb(null, 'uploads/'),
-//   filename: (req, file, cb) => {
-//     const unique =
-//       Date.now() + '-' + Math.random() + path.extname(file.originalname);
-//     cb(null, unique);
-//   },
-// });
-// export const upload = multer({ storage });
-// ---- didnt support on vercel
-
-export const uploadMemory = multer({ storage: multer.memoryStorage() });
 const app = express();
-
-// uploads
-// app.use('/uploads', express.static('uploads'));
 
 const port = process.env.PORT || 5000;
 
@@ -318,32 +297,59 @@ async function run() {
       '/api/products',
       verifyFirebaseToken,
       verifyManager,
-      // uploadMemory.array('images', 10),
       async (req, res) => {
         try {
-          const imageUrls = req.files.map(f => `/uploads/${f.filename}`);
+          const form = new formidable.IncomingForm({ multiples: true });
 
-          const product = {
-            name: req.body.name,
-            description: req.body.description,
-            category: req.body.category,
-            price: Number(req.body.price),
-            availableQuantity: Number(req.body.availableQuantity),
-            moq: Number(req.body.moq),
-            demoVideo: req.body.demoVideo || ' ',
-            managerEmail: req.body.managerEmail,
-            paymentOption: req.body.paymentOption,
-            showOnHome:
-              req.body.showOnHome === 'true' || req.body.showOnHome === true,
-            images: imageUrls,
-            createdAt: new Date(),
-          };
-          const result = await productsCollection.insertOne(product);
+          form.parse(req, async (err, fields, files) => {
+            if (err)
+              return res
+                .status(500)
+                .send({ success: false, message: 'Form parse error' });
 
-          res.send({ success: true, id: result.insertedId });
+            let allFiles = [];
+            if (Array.isArray(files.images)) {
+              allFiles = files.images;
+            } else {
+              allFiles = [files.images];
+            }
+            const imageUrls = [];
+
+            for (const file of allFiles) {
+              const imgBugger = fs.readFileSync(file.filepath);
+              const base64 = imgBugger.toString('base64');
+
+              const uploadsRes = await axios.post(
+                `https://api.imgbb.com/1/upload?key=${process.env.VITE_IMGBB_API}`,
+                { image: base64 }
+              );
+              imageUrls.push(uploadsRes.data.data.url);
+            }
+            const product = {
+              name: fields.name,
+              description: fields.description,
+              category: fields.category,
+              price: Number(fields.price),
+              availableQuantity: Number(fields.availableQuantity),
+              moq: Number(fields.moq),
+              demoVideo: fields.demoVideo || ' ',
+              managerEmail: fields.managerEmail,
+              paymentOption: fields.paymentOption,
+              showOnHome:
+                fields.showOnHome === 'true' || fields.showOnHome === true,
+              images: imageUrls,
+              createdAt: new Date(),
+            };
+            const result = await productsCollection.insertOne(product);
+
+            res.send({ success: true, id: result.insertedId });
+          });
         } catch (error) {
-          console.log(error);
-          res.status(500).send({ success: false });
+          console.error('Product upload error:', error);
+          res.status(500).send({
+            success: false,
+            message: 'Something went wrong',
+          });
         }
       }
     );
