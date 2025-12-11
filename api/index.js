@@ -710,7 +710,7 @@ async function run() {
     });
     // All Stats
     app.get(
-      '/dashboard/admin/stats',
+      '/api/dashboard/admin/stats',
       verifyFirebaseToken,
       verifyAdmin,
       async (req, res) => {
@@ -722,7 +722,7 @@ async function run() {
       }
     );
     app.get(
-      '/dashboard/manager/stats',
+      '/api/dashboard/manager/stats',
       verifyFirebaseToken,
       verifyManager,
       async (req, res) => {
@@ -743,24 +743,28 @@ async function run() {
     );
 
     // Get buyer stats
-    app.get('/dashboard/buyer/stats', verifyFirebaseToken, async (req, res) => {
-      try {
-        const email = req.query.email;
-        if (!email)
-          return res.status(400).send({ message: 'Email is required' });
+    app.get(
+      '/api/dashboard/buyer/stats',
+      verifyFirebaseToken,
+      async (req, res) => {
+        try {
+          const email = req.query.email;
+          if (!email)
+            return res.status(400).send({ message: 'Email is required' });
 
-        const orderCount = await ordersCollection.countDocuments({
-          buyerEmail: email,
-        });
+          const orderCount = await ordersCollection.countDocuments({
+            buyerEmail: email,
+          });
 
-        res.send({ success: true, orderCount });
-      } catch (error) {
-        console.error(error);
-        res
-          .status(500)
-          .send({ success: false, message: 'Failed to fetch stats' });
+          res.send({ success: true, orderCount });
+        } catch (error) {
+          console.error(error);
+          res
+            .status(500)
+            .send({ success: false, message: 'Failed to fetch stats' });
+        }
       }
-    });
+    );
 
     // Send a ping to confirm a successful connection
     await client.db('admin').command({ ping: 1 });
