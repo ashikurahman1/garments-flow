@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 import express from 'express';
 import cors from 'cors';
-// import multer from 'multer';
+import multer from 'multer';
 // import path from 'path';
 // import fs from 'fs';
 import admin from 'firebase-admin';
@@ -26,7 +26,7 @@ import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
 // ---- didnt support on vercel
 
 export const uploadMemory = multer({ storage: multer.memoryStorage() });
-// const app = express();
+const app = express();
 
 // uploads
 // app.use('/uploads', express.static('uploads'));
