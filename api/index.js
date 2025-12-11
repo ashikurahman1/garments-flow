@@ -485,6 +485,24 @@ async function run() {
     );
 
     // Orders related API
+
+    // My orders for Buyer
+    app.get('/api/orders/my-orders', verifyFirebaseToken, async (req, res) => {
+      try {
+        const userEmail = req.decoded_email;
+
+        const orders = await ordersCollection
+          .find({ buyerEmail: userEmail })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.status(200).send({ success: true, orders });
+      } catch (error) {
+        console.error('Error fetching orders:', error);
+        res.status(500).send({ success: false, message: 'Server error' });
+      }
+    });
+
     app.post('/api/orders', verifyFirebaseToken, async (req, res) => {
       try {
         const userEmail = req.decoded_email;
@@ -541,7 +559,7 @@ async function run() {
           deliveryAddress: address,
           additionalNotes: notes || '',
           paymentOption: product.paymentOption,
-          status: 'pending',
+          statusHistory: [{ status: 'pending', date: new Date() }],
           managerEmail: product.managerEmail,
           createdAt: new Date(),
         };
@@ -558,6 +576,52 @@ async function run() {
         res.status(201).send({ success: true, orderId: result.insertedId });
       } catch (error) {
         console.error('Order API Error:', error);
+        res.status(500).send({ success: false, message: 'Server error' });
+      }
+    });
+    // Cancel order
+    app.delete('/api/orders/:id', verifyFirebaseToken, async (req, res) => {
+      try {
+        const orderId = req.params.id;
+
+        const order = await ordersCollection.findOne({
+          _id: new ObjectId(orderId),
+        });
+        if (!order) {
+          return res
+            .status(404)
+            .send({ success: false, message: 'Order not found' });
+        }
+
+        // Get current status from statusHistory
+        const lastStatus =
+          order.statusHistory && order.statusHistory.length
+            ? order.statusHistory[order.statusHistory.length - 1].status
+            : 'pending';
+
+        if (lastStatus !== 'pending') {
+          return res
+            .status(400)
+            .send({ success: false, message: 'Order cannot be cancelled' });
+        }
+
+        // Update statusHistory to cancelled
+        const result = await ordersCollection.updateOne(
+          { _id: new ObjectId(orderId) },
+          {
+            $push: { statusHistory: { status: 'cancelled', date: new Date() } },
+          }
+        );
+
+        if (result.modifiedCount === 1) {
+          res.send({ success: true });
+        } else {
+          res
+            .status(500)
+            .send({ success: false, message: 'Failed to cancel order' });
+        }
+      } catch (error) {
+        console.error(error);
         res.status(500).send({ success: false, message: 'Server error' });
       }
     });
