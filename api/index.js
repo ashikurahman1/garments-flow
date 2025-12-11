@@ -151,57 +151,115 @@ async function run() {
       res.send({ role: user?.role || 'buyer' });
     });
     // update user profile
+    // app.patch(
+    //   '/api/users/:email/update-profile',
+    //   verifyFirebaseToken,
+    //   // uploadMemory.single('photo'),
+    //   async (req, res) => {
+    //     try {
+    //       const { email } = req.params;
+    //       const { displayName } = req.body;
+
+    //       let photoURL;
+
+    //       if (req.file) {
+    //         const imgbbApiKey = process.env.VITE_IMGBB_API;
+    //         const formData = new URLSearchParams();
+    //         formData.append('key', imgbbApiKey);
+    //         formData.append('image', req.file.buffer.toString('base64'));
+
+    //         const imgbbRes = await fetch('https://api.imgbb.com/1/upload', {
+    //           method: 'POST',
+    //           body: formData,
+    //         });
+
+    //         const imgbbData = await imgbbRes.json();
+    //         if (imgbbData.success) {
+    //           photoURL = imgbbData.data.url;
+    //         } else {
+    //           throw new Error('Image upload failed');
+    //         }
+    //       }
+
+    //       const updateData = { displayName };
+    //       if (photoURL) updateData.photoURL = photoURL;
+
+    //       const result = await usersCollection.updateOne(
+    //         { email },
+    //         { $set: updateData }
+    //       );
+
+    //       const updatedUser = await usersCollection.findOne({ email });
+
+    //       res.send({
+    //         success: true,
+    //         message: 'Profile updated successfully!',
+    //         photoURL: updatedUser.photoURL,
+    //         user: updatedUser,
+    //       });
+    //     } catch (error) {
+    //       console.error(error);
+    //       res.status(500).send({
+    //         success: false,
+    //         message: 'Server error!',
+    //         error: error.message,
+    //       });
+    //     }
+    //   }
+    // );
     app.patch(
       '/api/users/:email/update-profile',
       verifyFirebaseToken,
-      // uploadMemory.single('photo'),
       async (req, res) => {
         try {
           const { email } = req.params;
-          const { displayName } = req.body;
 
-          let photoURL;
-
-          if (req.file) {
-            const imgbbApiKey = process.env.VITE_IMGBB_API;
-            const formData = new URLSearchParams();
-            formData.append('key', imgbbApiKey);
-            formData.append('image', req.file.buffer.toString('base64'));
-
-            const imgbbRes = await fetch('https://api.imgbb.com/1/upload', {
-              method: 'POST',
-              body: formData,
-            });
-
-            const imgbbData = await imgbbRes.json();
-            if (imgbbData.success) {
-              photoURL = imgbbData.data.url;
-            } else {
-              throw new Error('Image upload failed');
-            }
+          // Ensure the user can only update their own profile
+          if (email !== req.decoded_email) {
+            return res
+              .status(403)
+              .send({ success: false, message: 'Forbidden access' });
           }
 
-          const updateData = { displayName };
+          const { displayName, photoURL } = req.body;
+
+          if (!displayName && !photoURL) {
+            return res
+              .status(400)
+              .send({ success: false, message: 'Nothing to update' });
+          }
+
+          // Build update object
+          const updateData = {};
+          if (displayName) updateData.displayName = displayName;
           if (photoURL) updateData.photoURL = photoURL;
 
+          // Update in database
           const result = await usersCollection.updateOne(
             { email },
             { $set: updateData }
           );
 
+          if (result.matchedCount === 0) {
+            return res
+              .status(404)
+              .send({ success: false, message: 'User not found' });
+          }
+
+          // Return updated user
           const updatedUser = await usersCollection.findOne({ email });
 
           res.send({
             success: true,
             message: 'Profile updated successfully!',
-            photoURL: updatedUser.photoURL,
             user: updatedUser,
+            photoURL: updatedUser.photoURL,
           });
         } catch (error) {
-          console.error(error);
+          console.error('Update profile error:', error);
           res.status(500).send({
             success: false,
-            message: 'Server error!',
+            message: 'Server error',
             error: error.message,
           });
         }
