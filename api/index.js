@@ -742,14 +742,24 @@ async function run() {
       }
     );
 
+    // Get buyer stats
     app.get('/dashboard/buyer/stats', verifyFirebaseToken, async (req, res) => {
-      const email = req.query.email;
+      try {
+        const email = req.query.email;
+        if (!email)
+          return res.status(400).send({ message: 'Email is required' });
 
-      const orderCount = await ordersCollection.countDocuments({
-        buyerEmail: email,
-      });
+        const orderCount = await ordersCollection.countDocuments({
+          buyerEmail: email,
+        });
 
-      res.send({ orderCount });
+        res.send({ success: true, orderCount });
+      } catch (error) {
+        console.error(error);
+        res
+          .status(500)
+          .send({ success: false, message: 'Failed to fetch stats' });
+      }
     });
 
     // Send a ping to confirm a successful connection
