@@ -56,6 +56,7 @@ async function run() {
     const db = client.db('garments_flow');
     const usersCollection = db.collection('users');
     const productsCollection = db.collection('products');
+    const ordersCollection = db.collection('orders');
 
     // Verify Admin
     const verifyAdmin = async (req, res, next) => {
@@ -152,7 +153,7 @@ async function run() {
     app.patch(
       '/api/users/:email/update-profile',
       verifyFirebaseToken,
-      uploadMemory.single('photo'),
+      // uploadMemory.single('photo'),
       async (req, res) => {
         try {
           const { email } = req.params;
@@ -279,6 +280,19 @@ async function run() {
         res.status(500).send({ message: 'Something wen wrong' });
       }
     });
+    app.get('/api/products/featured', async (req, res) => {
+      try {
+        const products = await productsCollection
+          .find({ showOnHome: true })
+          .sort({ createdAt: -1 })
+          .limit(8)
+          .toArray();
+        res.send(products);
+      } catch (error) {
+        console.error('Featured products error:', error);
+        res.status(500).send({ message: 'Something went wrong' });
+      }
+    });
     app.get('/api/products/:id', async (req, res) => {
       try {
         const { id } = req.params;
@@ -299,7 +313,7 @@ async function run() {
       verifyManager,
       async (req, res) => {
         try {
-          const form = new formidable.IncomingForm({ multiples: true });
+          const form = formidable({ multiples: true });
 
           form.parse(req, async (err, fields, files) => {
             if (err)
@@ -307,52 +321,79 @@ async function run() {
                 .status(500)
                 .send({ success: false, message: 'Form parse error' });
 
-            let allFiles = [];
-            if (Array.isArray(files.images)) {
-              allFiles = files.images;
-            } else {
-              allFiles = [files.images];
+            if (!files.images) {
+              return res
+                .status(400)
+                .send({ success: false, message: 'No images uploaded' });
             }
+
+            const allFiles = Array.isArray(files.images)
+              ? files.images
+              : [files.images];
             const imageUrls = [];
 
             for (const file of allFiles) {
-              const imgBugger = fs.readFileSync(file.filepath);
-              const base64 = imgBugger.toString('base64');
+              if (!fs.existsSync(file.filepath)) {
+                return res
+                  .status(400)
+                  .send({ success: false, message: 'File missing' });
+              }
 
-              const uploadsRes = await axios.post(
-                `https://api.imgbb.com/1/upload?key=${process.env.VITE_IMGBB_API}`,
-                { image: base64 }
+              const imgBuffer = fs.readFileSync(file.filepath);
+              const base64 = imgBuffer.toString('base64');
+
+              const formData = new URLSearchParams();
+              formData.append('key', process.env.VITE_IMGBB_API);
+              formData.append('image', base64);
+
+              const uploadRes = await axios.post(
+                'https://api.imgbb.com/1/upload',
+                formData.toString(),
+                {
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                  },
+                }
               );
-              imageUrls.push(uploadsRes.data.data.url);
+
+              if (!uploadRes.data.success) {
+                return res
+                  .status(500)
+                  .send({ success: false, message: 'Image upload failed' });
+              }
+
+              imageUrls.push(uploadRes.data.data.url);
             }
+            const getField = value => (Array.isArray(value) ? value[0] : value);
             const product = {
-              name: fields.name,
-              description: fields.description,
-              category: fields.category,
-              price: Number(fields.price),
-              availableQuantity: Number(fields.availableQuantity),
-              moq: Number(fields.moq),
-              demoVideo: fields.demoVideo || ' ',
-              managerEmail: fields.managerEmail,
-              paymentOption: fields.paymentOption,
-              showOnHome:
-                fields.showOnHome === 'true' || fields.showOnHome === true,
+              name: getField(fields.name),
+              description: getField(fields.description),
+              category: getField(fields.category),
+              price: Number(getField(fields.price)),
+              availableQuantity: Number(getField(fields.availableQuantity)),
+              moq: Number(getField(fields.moq)),
+              demoVideo: getField(fields.demoVideo) || '',
+              managerEmail: getField(fields.managerEmail),
+              paymentOption: getField(fields.paymentOption),
+
+              showOnHome: getField(fields.showOnHome) === 'true',
+
               images: imageUrls,
               createdAt: new Date(),
             };
-            const result = await productsCollection.insertOne(product);
 
+            const result = await productsCollection.insertOne(product);
             res.send({ success: true, id: result.insertedId });
           });
         } catch (error) {
           console.error('Product upload error:', error);
-          res.status(500).send({
-            success: false,
-            message: 'Something went wrong',
-          });
+          res
+            .status(500)
+            .send({ success: false, message: 'Something went wrong' });
         }
       }
     );
+
     app.patch(
       '/api/products/:id',
       verifyFirebaseToken,
@@ -443,11 +484,133 @@ async function run() {
       }
     );
 
+    // Orders related API
+    app.post('/api/orders', verifyFirebaseToken, async (req, res) => {
+      try {
+        const userEmail = req.decoded_email;
+        const {
+          productId,
+          firstName,
+          lastName,
+          quantity,
+          contact,
+          address,
+          notes,
+        } = req.body;
+
+        // Fetch user
+        const user = await usersCollection.findOne({ email: userEmail });
+        if (!user || user.role === 'admin' || user.role === 'manager') {
+          return res
+            .status(403)
+            .send({ message: 'Only buyers can place orders' });
+        }
+
+        // Fetch product
+        const product = await productsCollection.findOne({
+          _id: new ObjectId(productId),
+        });
+        if (!product)
+          return res.status(404).send({ message: 'Product not found' });
+
+        // Validate quantity
+        if (quantity < product.moq) {
+          return res
+            .status(400)
+            .send({ message: `Minimum order quantity is ${product.moq}` });
+        }
+        if (quantity > product.availableQuantity) {
+          return res.status(400).send({
+            message: `Maximum available quantity is ${product.availableQuantity}`,
+          });
+        }
+
+        // Calculate order price
+        const orderPrice = product.price * quantity;
+
+        const newOrder = {
+          buyerEmail: userEmail,
+          productId: product._id,
+          productName: product.name,
+          quantity,
+          pricePerUnit: product.price,
+          orderPrice,
+          firstName,
+          lastName,
+          contact,
+          deliveryAddress: address,
+          additionalNotes: notes || '',
+          paymentOption: product.paymentOption,
+          status: 'pending',
+          managerEmail: product.managerEmail,
+          createdAt: new Date(),
+        };
+
+        // Save order
+        const result = await ordersCollection.insertOne(newOrder);
+
+        // Reduce product stock
+        await productsCollection.updateOne(
+          { _id: product._id },
+          { $inc: { availableQuantity: -quantity } }
+        );
+
+        res.status(201).send({ success: true, orderId: result.insertedId });
+      } catch (error) {
+        console.error('Order API Error:', error);
+        res.status(500).send({ success: false, message: 'Server error' });
+      }
+    });
+
+    // All Stats
+    app.get(
+      '/dashboard/admin/stats',
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const totalProducts = await productsCollection.countDocuments();
+        const totalUsers = await usersCollection.countDocuments();
+        const totalOrders = await ordersCollection.countDocuments();
+
+        res.send({ totalProducts, totalUsers, totalOrders });
+      }
+    );
+    app.get(
+      '/dashboard/manager/stats',
+      verifyFirebaseToken,
+      verifyManager,
+      async (req, res) => {
+        const email = req.query.email;
+
+        const pendingOrders = await ordersCollection.countDocuments({
+          managerEmail: email,
+          status: 'pending',
+        });
+
+        const approvedOrders = await ordersCollection.countDocuments({
+          managerEmail: email,
+          status: 'approved',
+        });
+
+        res.send({ pendingOrders, approvedOrders });
+      }
+    );
+
+    app.get('/dashboard/buyer/stats', verifyFirebaseToken, async (req, res) => {
+      const email = req.query.email;
+
+      const orderCount = await ordersCollection.countDocuments({
+        buyerEmail: email,
+      });
+
+      res.send({ orderCount });
+    });
+
     // Send a ping to confirm a successful connection
-    // await client.db('admin').command({ ping: 1 });
-    // console.log(
-    //   'Pinged your deployment. You successfully connected to MongoDB!'
-    // );
+    await client.db('admin').command({ ping: 1 });
+    console.log(
+      'Pinged your deployment. You successfully connected to MongoDB!'
+    );
   } finally {
   }
 }
@@ -463,6 +626,6 @@ app.get('/', (req, res) => {
 //   res.status(404).json({ message: 'Route not found' });
 // });
 // Start server
-// app.listen(port, () => console.log(`Server running on port ${port}`));
-// export const handler = serverless(app);
+app.listen(port, () => console.log(`Server running on port ${port}`));
+
 export default app;
