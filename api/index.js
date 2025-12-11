@@ -2,12 +2,12 @@ import dotenv from 'dotenv';
 dotenv.config();
 import express from 'express';
 import cors from 'cors';
-import multer, { memoryStorage } from 'multer';
-import path from 'path';
-import fs from 'fs';
+// import multer from 'multer';
+// import path from 'path';
+// import fs from 'fs';
 import admin from 'firebase-admin';
 import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
-import serverless from 'serverless-http';
+// import serverless from 'serverless-http';
 
 // ---- didnt support on vercel
 // Create uploads folder if missing
@@ -26,10 +26,10 @@ import serverless from 'serverless-http';
 // ---- didnt support on vercel
 
 export const uploadMemory = multer({ storage: multer.memoryStorage() });
-const app = express();
+// const app = express();
 
 // uploads
-app.use('/uploads', express.static('uploads'));
+// app.use('/uploads', express.static('uploads'));
 
 const port = process.env.PORT || 5000;
 
@@ -318,7 +318,7 @@ async function run() {
       '/api/products',
       verifyFirebaseToken,
       verifyManager,
-      uploadMemory.array('images', 10),
+      // uploadMemory.array('images', 10),
       async (req, res) => {
         try {
           const imageUrls = req.files.map(f => `/uploads/${f.filename}`);
@@ -351,7 +351,7 @@ async function run() {
       '/api/products/:id',
       verifyFirebaseToken,
       verifyManager,
-      upload.array('images', 10),
+      // upload.array('images', 10),
       async (req, res) => {
         try {
           const { id } = req.params;
@@ -458,4 +458,4 @@ app.get('/', (req, res) => {
 // });
 // Start server
 // app.listen(port, () => console.log(`Server running on port ${port}`));
-export const handler = serverless(app);
+// export const handler = serverless(app);
