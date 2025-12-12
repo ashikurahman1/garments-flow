@@ -8,6 +8,9 @@ import fs from 'fs';
 import { nanoid } from 'nanoid';
 import admin from 'firebase-admin';
 import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
+import Stripe from 'stripe';
+
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 
@@ -58,6 +61,7 @@ async function run() {
     const usersCollection = db.collection('users');
     const productsCollection = db.collection('products');
     const ordersCollection = db.collection('orders');
+    const paymentCollection = db.collection('payments');
 
     // Verify Admin
     const verifyAdmin = async (req, res, next) => {
@@ -312,7 +316,7 @@ async function run() {
     // Products related api
     app.get('/api/products', async (req, res) => {
       try {
-        const { search = '', page = 1, limit = 12 } = req.query;
+        const { search = '', page = 1, limit = 8 } = req.query;
 
         const query = search ? { name: { $regex: search, $options: 'i' } } : {};
 
@@ -1023,6 +1027,33 @@ async function run() {
       }
     });
 
+    // get order data by buyer
+    app.get(
+      '/api/orders/my-order/:trackingId',
+      verifyFirebaseToken,
+      async (req, res) => {
+        const { trackingId } = req.params;
+        console.log(trackingId);
+
+        const buyerEmail = req.decoded_email;
+        try {
+          const order = await ordersCollection.findOne({
+            trackingId,
+            buyerEmail,
+          });
+          if (!order)
+            return res
+              .status(404)
+              .json({ success: false, message: 'Order not found' });
+
+          res.json({ success: true, order });
+        } catch (error) {
+          console.error(error);
+          res.status(500).json({ success: false, message: 'Server error' });
+        }
+      }
+    );
+
     // Get order by ID for tracking
     app.get('/api/orders/track-by-id/:trackingId', async (req, res) => {
       try {
@@ -1180,11 +1211,119 @@ async function run() {
       }
     );
 
+    // Payment API
+    app.post('/api/create-checkout-session', async (req, res) => {
+      const paymentInfo = req.body;
+      const amount = paymentInfo.cost;
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: 'USD',
+              unit_amount: amount,
+              product_data: {
+                name: paymentInfo.productName,
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        metadata: {
+          orderId: paymentInfo.orderId,
+          productName: paymentInfo.productName,
+          trackingId: paymentInfo.trackingId,
+        },
+        customer_email: paymentInfo.buyerEmail,
+        success_url: `${process.env.SITE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.SITE_DOMAIN}/payment-cancelled`,
+      });
+      res.send({ url: session.url });
+    });
+
+    //
+    app.patch('/api/payment-success', async (req, res) => {
+      try {
+        const sessionId = req.query.session_id;
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+        const transactionId = session.payment_intent;
+        const query = { transactionId: transactionId };
+
+        const paymentExist = await paymentCollection.findOne(query);
+        if (paymentExist) {
+          return res.send({
+            message: 'Payment already exist',
+            transactionId,
+            trackingId: paymentExist.trackingId,
+          });
+        }
+        const trackingId = session.metadata.trackingId;
+
+        if (session.payment_status === 'paid') {
+          const id = session.metadata.orderId;
+          const query = { _id: new ObjectId(id) };
+          const update = {
+            $set: {
+              paymentStatus: 'paid',
+            },
+          };
+          const result = await ordersCollection.updateOne(query, update);
+
+          const payment = {
+            amount: session.amount_total,
+            currency: session.currency,
+            senderEmail: session.customer_email,
+            parcelId: session.metadata.orderId,
+            parcelName: session.metadata.productName,
+            transactionId: session.payment_intent,
+            paymentStatus: session.payment_status,
+            paidAt: new Date(),
+            trackingId: trackingId,
+          };
+
+          if (session.payment_status === 'paid') {
+            const resultPayment = await paymentCollection.insertOne(payment);
+            res.send({
+              success: true,
+              trackingId: trackingId,
+              transactionId: session.payment_intent,
+            });
+          }
+        }
+        res.send({ success: false });
+      } catch (error) {
+        console.log(error);
+      }
+      app.get('/payments', verifyFirebaseToken, async (req, res) => {
+        try {
+          const { email } = req.query;
+          const query = {};
+
+          if (email) {
+            query.senderEmail = email;
+
+            // Strong verification or check email address
+
+            if (email !== req.decoded_email) {
+              return res.status(403).send({ message: 'Forbidden access' });
+            }
+          }
+          const cursor = paymentCollection.find(query).sort({ paidAt: -1 });
+          const result = await cursor.toArray();
+          res.send(result);
+        } catch (error) {
+          console.log(error.message);
+          res.send('Server error ');
+        }
+      });
+    });
+
     // Send a ping to confirm a successful connection
-    await client.db('admin').command({ ping: 1 });
-    console.log(
-      'Pinged your deployment. You successfully connected to MongoDB!'
-    );
+    // await client.db('admin').command({ ping: 1 });
+    // console.log(
+    //   'Pinged your deployment. You successfully connected to MongoDB!'
+    // );
   } finally {
   }
 }
