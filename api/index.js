@@ -1033,9 +1033,51 @@ async function run() {
         const totalUsers = await usersCollection.countDocuments();
         const totalOrders = await ordersCollection.countDocuments();
 
-        res.send({ totalProducts, totalUsers, totalOrders });
+        // Monthly stats
+        const monthlyOrders = await ordersCollection
+          .aggregate([
+            {
+              $group: {
+                _id: { $month: '$createdAt' },
+                orders: { $sum: 1 },
+              },
+            },
+            {
+              $sort: { _id: 1 },
+            },
+          ])
+          .toArray();
+
+        // Convert month number to name
+        const monthNames = [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec',
+        ];
+
+        const formattedMonthly = monthlyOrders.map(m => ({
+          month: monthNames[m._id - 1],
+          orders: m.orders,
+        }));
+
+        res.send({
+          totalProducts,
+          totalUsers,
+          totalOrders,
+          monthlyOrders: formattedMonthly,
+        });
       }
     );
+
     app.get(
       '/api/dashboard/manager/stats',
       verifyFirebaseToken,
