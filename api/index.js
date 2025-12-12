@@ -312,7 +312,7 @@ async function run() {
     // Products related api
     app.get('/api/products', async (req, res) => {
       try {
-        const { search = '', page = 1, limit = 12 } = req.query;
+        const { search = '', page = 1, limit = 8 } = req.query;
 
         const query = search ? { name: { $regex: search, $options: 'i' } } : {};
 
