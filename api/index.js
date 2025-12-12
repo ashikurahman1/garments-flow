@@ -80,6 +80,26 @@ async function run() {
       }
       next();
     };
+    // Manager & Admin
+    const verifyAdminOrManager = async (req, res, next) => {
+      try {
+        const email = req.decoded_email;
+
+        if (!email) {
+          return res.status(401).send({ message: 'Invalid Token' });
+        }
+
+        const user = await usersCollection.findOne({ email });
+
+        if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
+          return res.status(403).send({ message: 'Forbidden Access' });
+        }
+
+        next();
+      } catch (error) {
+        return res.status(403).send({ message: 'Forbidden Access' });
+      }
+    };
 
     // users related API
     // get all users by admin
@@ -150,63 +170,7 @@ async function run() {
       const user = await usersCollection.findOne(query);
       res.send({ role: user?.role || 'buyer' });
     });
-    // update user profile
-    // app.patch(
-    //   '/api/users/:email/update-profile',
-    //   verifyFirebaseToken,
-    //   // uploadMemory.single('photo'),
-    //   async (req, res) => {
-    //     try {
-    //       const { email } = req.params;
-    //       const { displayName } = req.body;
 
-    //       let photoURL;
-
-    //       if (req.file) {
-    //         const imgbbApiKey = process.env.VITE_IMGBB_API;
-    //         const formData = new URLSearchParams();
-    //         formData.append('key', imgbbApiKey);
-    //         formData.append('image', req.file.buffer.toString('base64'));
-
-    //         const imgbbRes = await fetch('https://api.imgbb.com/1/upload', {
-    //           method: 'POST',
-    //           body: formData,
-    //         });
-
-    //         const imgbbData = await imgbbRes.json();
-    //         if (imgbbData.success) {
-    //           photoURL = imgbbData.data.url;
-    //         } else {
-    //           throw new Error('Image upload failed');
-    //         }
-    //       }
-
-    //       const updateData = { displayName };
-    //       if (photoURL) updateData.photoURL = photoURL;
-
-    //       const result = await usersCollection.updateOne(
-    //         { email },
-    //         { $set: updateData }
-    //       );
-
-    //       const updatedUser = await usersCollection.findOne({ email });
-
-    //       res.send({
-    //         success: true,
-    //         message: 'Profile updated successfully!',
-    //         photoURL: updatedUser.photoURL,
-    //         user: updatedUser,
-    //       });
-    //     } catch (error) {
-    //       console.error(error);
-    //       res.status(500).send({
-    //         success: false,
-    //         message: 'Server error!',
-    //         error: error.message,
-    //       });
-    //     }
-    //   }
-    // );
     app.patch(
       '/api/users/:email/update-profile',
       verifyFirebaseToken,
@@ -369,7 +333,7 @@ async function run() {
     app.post(
       '/api/products',
       verifyFirebaseToken,
-      verifyManager,
+      verifyAdminOrManager,
       async (req, res) => {
         try {
           const form = formidable({ multiples: true });
@@ -456,44 +420,85 @@ async function run() {
     app.patch(
       '/api/products/:id',
       verifyFirebaseToken,
-      verifyManager,
-      // upload.array('images', 10),
+      verifyAdminOrManager,
       async (req, res) => {
         try {
           const { id } = req.params;
 
-          const updateData = {
-            name: req.body.name,
-            description: req.body.description,
-            category: req.body.category,
-            price: Number(req.body.price),
-            availableQuantity: Number(req.body.availableQuantity),
-            moq: Number(req.body.moq),
-            paymentOption: req.body.paymentOption,
-            showOnHome:
-              req.body.showOnHome === 'true' || req.body.showOnHome === true,
-            demoVideo: req.body.demoVideo || '',
-          };
-          if (req.files && req.files.length > 0) {
-            updateData.images = req.files.map(f => `/uploads/${f.filename}`);
-          }
-          const result = await productsCollection.updateOne(
-            {
-              _id: new ObjectId(id),
-            },
-            { $set: updateData }
-          );
-          res.send({ success: true });
+          const form = formidable({ multiples: true });
+
+          form.parse(req, async (err, fields, files) => {
+            if (err) {
+              return res
+                .status(500)
+                .send({ success: false, message: 'Form parse error' });
+            }
+
+            const getField = v => (Array.isArray(v) ? v[0] : v);
+
+            // Build update object
+            const updateData = {
+              name: getField(fields.name),
+              description: getField(fields.description),
+              category: getField(fields.category),
+              price: Number(getField(fields.price)),
+              availableQuantity: Number(getField(fields.availableQuantity)),
+              moq: Number(getField(fields.moq)),
+              paymentOption: getField(fields.paymentOption),
+              demoVideo: getField(fields.demoVideo) || '',
+              showOnHome: getField(fields.showOnHome) === 'true',
+            };
+
+            //  Upload only if new images exist
+            if (files.images) {
+              const allFiles = Array.isArray(files.images)
+                ? files.images
+                : [files.images];
+
+              const uploadedImages = [];
+
+              for (const file of allFiles) {
+                const imgBuffer = fs.readFileSync(file.filepath);
+                const base64 = imgBuffer.toString('base64');
+
+                const formData = new URLSearchParams();
+                formData.append('key', process.env.VITE_IMGBB_API);
+                formData.append('image', base64);
+
+                const uploadRes = await axios.post(
+                  'https://api.imgbb.com/1/upload',
+                  formData.toString(),
+                  {
+                    headers: {
+                      'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                  }
+                );
+
+                uploadedImages.push(uploadRes.data.data.url);
+              }
+
+              updateData.images = uploadedImages;
+            }
+
+            const result = await productsCollection.updateOne(
+              { _id: new ObjectId(id) },
+              { $set: updateData }
+            );
+
+            res.send({ success: true, updated: result.modifiedCount > 0 });
+          });
         } catch (error) {
           console.log(error);
-          res.status(500).send({ success: false });
+          res.status(500).send({ success: false, message: 'Server error' });
         }
       }
     );
+
     app.delete(
       '/api/products/:id',
       verifyFirebaseToken,
-      verifyManager,
+      verifyAdminOrManager,
       async (req, res) => {
         try {
           const { id } = req.params;
@@ -503,6 +508,28 @@ async function run() {
           });
           res.send({ success: !!result.deletedCount });
         } catch (error) {
+          res.status(500).send({ success: false });
+        }
+      }
+    );
+    // Toggle showOnHome by admin
+    app.patch(
+      '/api/products/:id/toggle-home',
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const { id } = req.params;
+          const { showOnHome } = req.body;
+
+          const result = await productsCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { showOnHome: !!showOnHome } }
+          );
+
+          res.send({ success: true });
+        } catch (error) {
+          console.error('Toggle Home Error:', error);
           res.status(500).send({ success: false });
         }
       }
