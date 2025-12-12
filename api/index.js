@@ -108,8 +108,10 @@ async function run() {
       verifyFirebaseToken,
       verifyAdmin,
       async (req, res) => {
-        const searchText = req.query.searchText;
+        const { searchText, role, status } = req.query;
         const query = {};
+
+        // Search by name or email
         if (searchText) {
           query.$or = [
             { displayName: { $regex: searchText, $options: 'i' } },
@@ -117,9 +119,23 @@ async function run() {
           ];
         }
 
-        const cursor = usersCollection.find(query).sort({ createdAt: -1 });
-        const result = await cursor.toArray();
-        res.send(result);
+        // Filter by role
+        if (role) {
+          query.role = role;
+        }
+
+        // Filter by status
+        if (status) {
+          query.status = status;
+        }
+
+        try {
+          const cursor = usersCollection.find(query).sort({ createdAt: -1 });
+          const result = await cursor.toArray();
+          res.send(result);
+        } catch (error) {
+          res.status(500).send({ message: 'Failed to fetch users', error });
+        }
       }
     );
     // add user in Db
