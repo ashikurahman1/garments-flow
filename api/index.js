@@ -572,6 +572,242 @@ async function run() {
 
     // Orders related API
 
+    app.get(
+      '/api/orders/details/:id',
+      verifyFirebaseToken,
+      verifyAdminOrManager,
+      async (req, res) => {
+        try {
+          const { id } = req.params;
+          const order = await ordersCollection.findOne({
+            _id: new ObjectId(id),
+          });
+
+          if (!order)
+            return res
+              .status(404)
+              .send({ success: false, message: 'Order not found' });
+
+          res.send({ success: true, order });
+        } catch (error) {
+          console.error(error);
+          res.status(500).send({ success: false, message: 'Server error' });
+        }
+      }
+    );
+
+    // Get Pending Orders by Manager or Admin
+
+    app.get(
+      '/api/orders/pending',
+      verifyFirebaseToken,
+      verifyAdminOrManager,
+      async (req, res) => {
+        try {
+          const pendingOrders = await ordersCollection
+            .aggregate([
+              {
+                $addFields: {
+                  latestStatus: { $arrayElemAt: ['$statusHistory.status', -1] },
+                },
+              },
+              {
+                $match: { latestStatus: 'pending' },
+              },
+              {
+                $sort: { createdAt: -1 },
+              },
+            ])
+            .toArray();
+
+          res.send(pendingOrders);
+        } catch (error) {
+          console.error('Pending Orders Error:', error);
+          res.status(500).send({ message: 'Failed to load pending orders' });
+        }
+      }
+    );
+
+    // GET: Approved Orders (Admin + Manager)
+    app.get(
+      '/api/orders/approved',
+      verifyFirebaseToken,
+      verifyAdminOrManager,
+      async (req, res) => {
+        try {
+          const approvedOrders = await ordersCollection
+            .aggregate([
+              {
+                $addFields: {
+                  latestStatus: { $arrayElemAt: ['$statusHistory.status', -1] },
+                },
+              },
+              {
+                $match: { latestStatus: 'approved' },
+              },
+              { $sort: { createdAt: -1 } },
+            ])
+            .toArray();
+
+          res.send(approvedOrders);
+        } catch (error) {
+          console.error('Approved Orders Error:', error);
+          res.status(500).send({ message: 'Failed to load approved orders' });
+        }
+      }
+    );
+
+    // Order Tracking Timeline
+    app.get(
+      '/api/orders/:id/tracking',
+      verifyFirebaseToken,
+      verifyAdminOrManager,
+      async (req, res) => {
+        const { id } = req.params;
+
+        try {
+          const order = await ordersCollection.findOne(
+            { _id: new ObjectId(id) },
+            { projection: { tracking: 1, productName: 1, buyerEmail: 1 } }
+          );
+
+          if (!order) {
+            return res.status(404).send({ message: 'Order not found' });
+          }
+
+          res.send(order);
+        } catch (error) {
+          console.error('Tracking Fetch Error:', error);
+          res.status(500).send({ message: 'Failed to fetch tracking' });
+        }
+      }
+    );
+
+    // Add Tracking Update
+    app.patch(
+      '/api/orders/:id/tracking',
+      verifyFirebaseToken,
+      verifyAdminOrManager,
+      async (req, res) => {
+        const { id } = req.params;
+        const { status, location, note } = req.body;
+
+        try {
+          const update = {
+            status,
+            location,
+            note: note || '',
+            date: new Date(),
+          };
+
+          const result = await ordersCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $push: { tracking: update } }
+          );
+
+          res.send({ success: true, message: 'Tracking updated successfully' });
+        } catch (error) {
+          console.error('Add Tracking Error:', error);
+          res
+            .status(500)
+            .send({ success: false, message: 'Failed to add tracking' });
+        }
+      }
+    );
+
+    // Approve Order by Manager or Admin
+    app.patch(
+      '/api/orders/:id/approve',
+      verifyFirebaseToken,
+      verifyAdminOrManager,
+      async (req, res) => {
+        try {
+          const { id } = req.params;
+
+          const order = await ordersCollection.findOne({
+            _id: new ObjectId(id),
+          });
+
+          if (!order) {
+            return res
+              .status(404)
+              .send({ success: false, message: 'Order not found' });
+          }
+
+          const lastStatus =
+            order.statusHistory[order.statusHistory.length - 1].status;
+
+          if (lastStatus !== 'pending') {
+            return res.status(400).send({
+              success: false,
+              message: 'Only pending orders can be approved',
+            });
+          }
+
+          const result = await ordersCollection.updateOne(
+            { _id: new ObjectId(id) },
+            {
+              $push: {
+                statusHistory: { status: 'approved', date: new Date() },
+              },
+              $set: { approvedAt: new Date() },
+            }
+          );
+
+          res.send({ success: true });
+        } catch (error) {
+          console.error('Approve order error:', error);
+          res.status(500).send({ success: false, message: 'Server error' });
+        }
+      }
+    );
+
+    // Reject Order by Manager or Admin
+    app.patch(
+      '/api/orders/:id/reject',
+      verifyFirebaseToken,
+      verifyAdminOrManager,
+      async (req, res) => {
+        try {
+          const { id } = req.params;
+
+          const order = await ordersCollection.findOne({
+            _id: new ObjectId(id),
+          });
+
+          if (!order) {
+            return res
+              .status(404)
+              .send({ success: false, message: 'Order not found' });
+          }
+
+          const lastStatus =
+            order.statusHistory[order.statusHistory.length - 1].status;
+
+          if (lastStatus !== 'pending') {
+            return res.status(400).send({
+              success: false,
+              message: 'Only pending orders can be rejected',
+            });
+          }
+
+          const result = await ordersCollection.updateOne(
+            { _id: new ObjectId(id) },
+            {
+              $push: {
+                statusHistory: { status: 'rejected', date: new Date() },
+              },
+            }
+          );
+
+          res.send({ success: true });
+        } catch (error) {
+          console.error('Reject order error:', error);
+          res.status(500).send({ success: false, message: 'Server error' });
+        }
+      }
+    );
+
     // My orders for Buyer
     app.get('/api/orders/my-orders', verifyFirebaseToken, async (req, res) => {
       try {
@@ -603,7 +839,7 @@ async function run() {
             query.status = status.toLowerCase();
           }
 
-          // Optional search by buyer email, product name, or tracking ID
+          // Optional search
           if (searchText) {
             query.$or = [
               { buyerEmail: { $regex: searchText, $options: 'i' } },
