@@ -1029,11 +1029,45 @@ async function run() {
       verifyFirebaseToken,
       verifyAdmin,
       async (req, res) => {
-        const totalProducts = await productsCollection.countDocuments();
-        const totalUsers = await usersCollection.countDocuments();
-        const totalOrders = await ordersCollection.countDocuments();
+        const now = new Date();
 
-        // Monthly stats
+        // Helper to calculate date ranges
+        const getDateRange = days =>
+          new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+
+        const todayStart = new Date(now.setHours(0, 0, 0, 0));
+        const weekStart = getDateRange(7);
+        const monthStart = getDateRange(30);
+
+        // Product Stats
+        const productsToday = await productsCollection.countDocuments({
+          createdAt: { $gte: todayStart },
+        });
+        const productsWeek = await productsCollection.countDocuments({
+          createdAt: { $gte: weekStart },
+        });
+        const productsMonth = await productsCollection.countDocuments({
+          createdAt: { $gte: monthStart },
+        });
+
+        // Orders This Month
+        const ordersThisMonth = await ordersCollection.countDocuments({
+          createdAt: { $gte: monthStart },
+        });
+
+        // Users
+        const newUsers = await usersCollection.countDocuments({
+          createdAt: { $gte: monthStart },
+        });
+        const totalUsers = await usersCollection.countDocuments();
+
+        // Managers Active Count
+        const activeManagers = await usersCollection.countDocuments({
+          role: 'manager',
+          status: 'active',
+        });
+
+        // Monthly Order Chart
         const monthlyOrders = await ordersCollection
           .aggregate([
             {
@@ -1042,13 +1076,10 @@ async function run() {
                 orders: { $sum: 1 },
               },
             },
-            {
-              $sort: { _id: 1 },
-            },
+            { $sort: { _id: 1 } },
           ])
           .toArray();
 
-        // Convert month number to name
         const monthNames = [
           'Jan',
           'Feb',
@@ -1070,9 +1101,17 @@ async function run() {
         }));
 
         res.send({
-          totalProducts,
-          totalUsers,
-          totalOrders,
+          productStats: {
+            today: productsToday,
+            week: productsWeek,
+            month: productsMonth,
+          },
+          ordersThisMonth,
+          users: {
+            new: newUsers,
+            total: totalUsers,
+          },
+          managersActive: activeManagers,
           monthlyOrders: formattedMonthly,
         });
       }
