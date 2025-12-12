@@ -588,6 +588,42 @@ async function run() {
         res.status(500).send({ success: false, message: 'Server error' });
       }
     });
+    // Get all orders - Admin only
+    app.get(
+      '/api/orders',
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const { status, searchText } = req.query;
+          const query = {};
+
+          // Filter by status
+          if (status && status !== 'All') {
+            query.status = status.toLowerCase();
+          }
+
+          // Optional search by buyer email, product name, or tracking ID
+          if (searchText) {
+            query.$or = [
+              { buyerEmail: { $regex: searchText, $options: 'i' } },
+              { productName: { $regex: searchText, $options: 'i' } },
+              { trackingId: { $regex: searchText, $options: 'i' } },
+            ];
+          }
+
+          const orders = await ordersCollection
+            .find(query)
+            .sort({ createdAt: -1 })
+            .toArray();
+
+          res.send({ success: true, orders });
+        } catch (error) {
+          console.error('Admin all orders error:', error);
+          res.status(500).send({ success: false, message: 'Server error' });
+        }
+      }
+    );
 
     app.post('/api/orders', verifyFirebaseToken, async (req, res) => {
       try {
