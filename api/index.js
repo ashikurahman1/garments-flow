@@ -312,11 +312,29 @@ async function run() {
     // Products related api
     app.get('/api/products', async (req, res) => {
       try {
-        const cursor = productsCollection.find({}).sort({ createdAt: -1 });
-        const result = await cursor.toArray();
-        res.send(result);
+        const { search = '', page = 1, limit = 12 } = req.query;
+
+        const query = search ? { name: { $regex: search, $options: 'i' } } : {};
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const total = await productsCollection.countDocuments(query);
+        const products = await productsCollection
+          .find(query)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(parseInt(limit))
+          .toArray();
+
+        res.send({
+          products,
+          total,
+          page: parseInt(page),
+          totalPages: Math.ceil(total / parseInt(limit)),
+        });
       } catch (error) {
-        res.status(500).send({ message: 'Something wen wrong' });
+        console.error(error);
+        res.status(500).send({ message: 'Something went wrong' });
       }
     });
     app.get('/api/products/featured', async (req, res) => {
