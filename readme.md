@@ -1,106 +1,124 @@
-# Garments Flow
+# GarmentFlow API - Server
 
-Garments Flow is a full-stack MERN-based garment ordering and management
-platform built to support buyers, managers, and administrators with role-based
-access control, product management, order processing, and dashboard analytics.
+**GarmentFlow API** is the robust backend powering the GarmentFlow apparel management platform. It allows for secure user management, product inventory control, order processing, and payment handling. Built with Node.js and Express, it features a stateless REST architecture secured by JWT and MongoDB.
+
+| Home Page | Admin Dashboard |
+| :---: | :---: |
+| ![Home Page](screenshots/home-page.png) | ![Admin Dashboard](screenshots/admin-dash.png) |
+---
+
+**Live Site:**
+[https://garments-flow.vercel.app/](https://garments-flow.vercel.app/)  
+**Client Repo:**
+[https://github.com/ashikurahman1/garments-flow-c](https://github.com/ashikurahman1/garments-flow-c)  
+**Server Repo:**
+[https://github.com/ashikurahman1/garments-flow](https://github.com/ashikurahman1/garments-flow)
+## Key Features
+
+### Security & Authentication
+-   **JWT Authentication**: Stateless session management using securely signed JSON Web Tokens.
+-   **Middleware Protection**: Custom `verifyToken` and Role Verification (`verifyAdmin`, `verifyManager`) middleware to secure endpoints.
+-   **CORS Configuration**: Secure Cross-Origin Resource Sharing setup for trusted client communication.
+
+### Core Functionality
+-   **User Management**: CRUD operations for users with Role-Based Access Control (RBAC).
+-   **Product Catalog**: Management of apparel products including filtering, searching, and categorization.
+-   **Order Processing**: Complete lifecycle management for orders (Pending -> Approved -> Shipped -> Delivered) with tracking history.
+-   **Payment Integration**: Secure payment intent generation using **Stripe**.
 
 ---
 
-## Live Demo
+## Technology Stack
 
-Client Application:  
-https://garments-flow.vercel.app/
-
----
-
-## Repositories
-
-Client Repository:  
-https://github.com/ashikurahman1/garments-flow-c
-
-Server Repository:  
-https://github.com/ashikurahman1/garments-flow
+-   **Runtime**: [Node.js](https://nodejs.org/)
+-   **Framework**: [Express.js](https://expressjs.com/)
+-   **Database**: [MongoDB](https://www.mongodb.com/) (Mongoose or Native Driver)
+-   **Authentication**: [cookie-parser](https://www.npmjs.com/package/cookie-parser), [jsonwebtoken](https://jwt.io/)
+-   **Payments**: [Stripe](https://stripe.com/)
+-   **Environment**: [dotenv](https://www.npmjs.com/package/dotenv)
 
 ---
 
-## Tech Stack
+## Getting Started
 
-### Frontend
+### Prerequisites
+-   **Node.js** (v16 or higher)
+-   **MongoDB** (Local or Atlas URI)
 
-- Next.js
-- React
-- Tailwind CSS
-- TanStack Query
-- Firebase Authentication
+### Installation
 
-### Backend
+1.  **Navigate to Server Directory**
+    ```bash
+    cd garmentflow/server
+    ```
 
-- Node.js
-- Express.js
-- MongoDB
-- Firebase Admin SDK
-- Formidable (file uploads)
-- Axios
-- JWT-based authorization
+2.  **Install Dependencies**
+    ```bash
+    npm install
+    ```
 
----
+3.  **Configure Environment Variables**
+    Create a `.env` file in the root of the `server` directory and add the following keys:
+    ```env
+    PORT=5000
+    DB_USER=your_web_db_user
+    DB_PASS=your_web_db_password
+    ACCESS_TOKEN_SECRET=your_long_random_secret_string
+    STRIPE_SECRET_KEY=your_stripe_secret_key
+    ```
 
-## Authentication and Authorization
-
-- Firebase Authentication for secure login and registration
-- Firebase Admin SDK for verifying ID tokens
-- Role-based access control (buyer, manager, admin)
-- Protected API routes using middleware
-
----
-
-## Core Features
-
-### User Management
-
-- User registration and profile updates
-- Admin-controlled user role and status management
-- User suspension and deletion
-- Role-based conditional navigation rendering
-
-### Product Management
-
-- Add, update, and delete products (Admin and Manager)
-- Multiple image uploads using imgBB
-- Featured products for home page display
-- Search, pagination, and filtering
-
-### Order Management
-
-- Order placement by buyers only
-- MOQ and stock availability validation
-- Order approval and rejection by Admin or Manager
-- Order cancellation (pending orders only)
-- Order tracking timeline with status history
-
-### Dashboards
-
-Admin Dashboard:
-
-- Product statistics (daily, weekly, monthly)
-- User statistics
-- Monthly order analytics
-
-Manager Dashboard:
-
-- Pending and approved orders
-- Manager-specific product listings
-
-Buyer Dashboard:
-
-- Order count and order history
+4.  **Run Development Server**
+    ```bash
+    npm run start
+    # or for hot-reloading
+    npm run dev
+    ```
+    The server will start on `http://localhost:5000`.
 
 ---
 
-## Important Learning and Mistakes
+## API Endpoints Overview
 
-### Mistake #1: API Route Prefix Mismatch
+### Authentication & Users
+-   `POST /jwt`: Generate access token upon login.
+-   `POST /logout`: Clear session cookies.
+-   `POST /users`: Register a new user.
+-   `GET /users`: Get all users (Admin only).
+-   `PATCH /users/admin/:id`: Promote user to Admin.
 
-While implementing the user role fetching feature, the backend route was
-initially created without the `/api` prefix, but the frontend was requesting
-data using `/api/...`.
+### Products
+-   `GET /products`: Retrieve all products (with pagination/filter).
+-   `POST /products`: Add a new product (Manager only).
+-   `GET /products/:id`: Get detailed product information.
+-   `DELETE /products/:id`: Remove a product.
+
+### Orders
+-   `POST /orders`: Place a new order.
+-   `GET /orders`: View all orders (Admin).
+-   `GET /orders/email/:email`: Get orders for a specific buyer.
+-   `PATCH /orders/:id`: Update order status (Approve/Reject/Ship).
+
+### Payments
+-   `POST /create-payment-intent`: Generate Stripe payment intent for checkout.
+
+---
+
+## Project Structure
+
+```
+server/
+├── index.js             # Entry point & App configuration
+├── package.json         # Dependencies & Scripts
+├── .env                 # Environment secrets (ignored in git)
+└── (Additional folders for routes/controllers if modularized)
+```
+
+---
+
+## Contributing
+
+Contributions are welcome! Please fork the repository and create a pull request for any feature enhancements or bug fixes.
+
+---
+
+
